@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocDiff – So sánh PDF & Word</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f6fb;
+      --surface: #fff;
+      --border: #e2e8f0;
+      --primary: #4f6ef7;
+      --primary-dark: #3b55e0;
+      --primary-light: #eef1fe;
+      --success: #10b981;
+      --success-light: #d1fae5;
+      --danger: #ef4444;
+      --danger-light: #fee2e2;
+      --text: #1e293b;
+      --muted: #64748b;
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0 24px;
+    }
+
+    .header-inner {
+      max-width: 1100px;
+      margin: auto;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #4f6ef7, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(79,110,247,0.3);
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg { color: white; }
+
+    .logo-text h1 { font-size: 18px; font-weight: 700; color: var(--text); }
+    .logo-text p { font-size: 12px; color: var(--muted); }
+
+    #resetBtn {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: white;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    #resetBtn:hover { background: #f8fafc; color: var(--text); }
+
+    main {
+      max-width: 1100px;
+      margin: auto;
+      padding: 32px 24px;
+    }
+
+    .drop-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 640px) {
+      .drop-grid { grid-template-columns: 1fr; }
+    }
+
+    .drop-zone {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .2s;
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .drop-zone.has-file {
+      border-style: solid;
+      border-color: var(--border);
+      text-align: left;
+      padding: 20px;
+      cursor: default;
+    }
+
+    .drop-zone-icon {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 12px;
+      background: #f1f5f9;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .2s;
+    }
+
+    .drop-zone:hover .drop-zone-icon { background: var(--primary-light); }
+
+    .drop-zone-label { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .drop-zone-hint { font-size: 12px; color: var(--muted); }
+
+    .file-info {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .file-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--primary-light);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--primary);
+    }
+
+    .file-meta { flex: 1; min-width: 0; }
+    .file-badges { display: flex; gap: 6px; margin-bottom: 6px; }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .badge-primary { background: var(--primary-light); color: var(--primary); }
+    .badge-gray { background: #f1f5f9; color: var(--muted); }
+
+    .file-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-stats { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .file-clear {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #94a3b8;
+      padding: 4px;
+      border-radius: 6px;
+      transition: all .15s;
+      flex-shrink: 0;
+    }
+
+    .file-clear:hover { background: var(--danger-light); color: var(--danger); }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.85);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toolbar {
+      display: none;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .toolbar.visible { display: flex; }
+
+    .seg-control {
+      display: flex;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 3px;
+      gap: 2px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+
+    .seg-btn {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 6px;
+      background: none;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+    }
+
+    .seg-btn.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 6px rgba(79,110,247,.3);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), #3b82f6);
+      color: white;
+      box-shadow: 0 4px 12px rgba(79,110,247,.35);
+    }
+
+    .btn-primary:hover { opacity: .9; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .btn-outline {
+      background: white;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .btn-outline:hover { background: #f8fafc; color: var(--text); }
+
+    .btn-export {
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid #c7d2fe;
+    }
+
+    .btn-export:hover { background: #e0e7ff; }
+
+    .error-banner {
+      display: none;
+      background: var(--danger-light);
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      margin-bottom: 20px;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .error-banner.visible { display: flex; }
+
+    /* Stats */
+    .stats-card {
+      display: none;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+
+    .stats-card.visible { display: block; }
+
+    .stats-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-box {
+      padding: 14px;
+      border-radius: 10px;
+      background: #f8fafc;
+      text-align: center;
+    }
+
+    .stat-value { font-size: 22px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    .stat-bar { height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .stat-bar-fill { height: 100%; border-radius: 2px; transition: width .6s; }
+
+    /* View controls */
+    .view-controls {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .view-controls.visible { display: flex; }
+
+    /* Diff output */
+    .diff-output { display: none; }
+    .diff-output.visible { display: block; }
+
+    .diff-box {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+
+    .diff-box-header {
+      padding: 10px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .diff-content {
+      padding: 20px;
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .side-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) { .side-grid { grid-template-columns: 1fr; } }
+
+    .ins { background: var(--success-light); color: #065f46; border-radius: 3px; padding: 0 1px; }
+    .del { background: var(--danger-light); color: #991b1b; text-decoration: line-through; border-radius: 3px; padding: 0 1px; }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 5px;
+    }
+
+    /* Welcome cards */
+    .welcome {
+      text-align: center;
+      margin-top: 32px;
+    }
+
+    .welcome-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+
+    .feature-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      max-width: 600px;
+      margin: auto;
+    }
+
+    @media (max-width: 640px) { .feature-cards { grid-template-columns: 1fr; } }
+
+    .feature-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+
+    .feature-card-icon { color: var(--primary); }
+    .feature-card h3 { font-size: 13px; font-weight: 600; color: var(--text); }
+    .feature-card p { font-size: 12px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <path d="M8 3H2v6M16 3h6v6M8 21H2v-6M16 21h6v-6"/>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <h1>DocDiff</h1>
+        <p>So sánh PDF, Word &amp; Text</p>
+      </div>
+    </div>
+    <button id="resetBtn" onclick="resetAll()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+      Làm mới
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="error-banner" id="errorBanner">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="errorText"></span>
+  </div>
+
+  <div class="drop-grid">
+    <div class="drop-zone" id="dropA"
+      ondragover="onDragOver(event,'A')" ondragleave="onDragLeave('A')" ondrop="onDrop(event,'A')" onclick="triggerFile('A')">
+      <div id="emptyA">
+        <div class="drop-zone-icon">
+          <svg width="28" height="28" fill="none" stroke="#94a3b8" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="drop-zone-label">Tài liệu A</div>
+        <div class="drop-zone-hint">PDF, Word (.docx), hoặc Text (.txt)</div>
+      </div>
+      <div id="fileInfoA" style="display:none" class="file-info"></div>
+      <div id="loadingA" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <span style="font-size:13px;color:var(--muted)">Đang đọc tài liệu...</span>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="dropB"
+      ondragover="onDragOver(event,'B')" ondragleave="onDragLeave('B')" ondrop="onDrop(event,'B')" onclick="triggerFile('B')">
+      <div id="emptyB">
+        <div class="drop-zone-icon">
+          <svg width="28" height="28" fill="none" stroke="#94a3b8" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="drop-zone-label">Tài liệu B</div>
+        <div class="drop-zone-hint">PDF, Word (.docx), hoặc Text (.txt)</div>
+      </div>
+      <div id="fileInfoB" style="display:none" class="file-info"></div>
+      <div id="loadingB" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <span style="font-size:13px;color:var(--muted)">Đang đọc tài liệu...</span>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInputA" accept=".pdf,.docx,.doc,.txt" style="display:none" onchange="onFileChange(event,'A')" />
+  <input type="file" id="fileInputB" accept=".pdf,.docx,.doc,.txt" style="display:none" onchange="onFileChange(event,'B')" />
+
+  <div class="toolbar" id="toolbar">
+    <div class="seg-control">
+      <button class="seg-btn active" id="modeWords" onclick="setDiffMode('words')">Theo từ</button>
+      <button class="seg-btn" id="modeLines" onclick="setDiffMode('lines')">Theo dòng</button>
+    </div>
+    <button class="btn btn-outline" onclick="swapFiles()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H2v6M16 3h6v6M8 21H2v-6M16 21h6v-6"/></svg>
+      Hoán đổi
+    </button>
+    <button class="btn btn-primary" id="compareBtn" onclick="runCompare()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      So sánh
+    </button>
+  </div>
+
+  <div class="stats-card" id="statsCard">
+    <div class="stats-header">
+      <svg width="16" height="16" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Thống kê so sánh
+    </div>
+    <div class="stats-grid" id="statsGrid"></div>
+  </div>
+
+  <div class="view-controls" id="viewControls">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="seg-control">
+        <button class="seg-btn active" id="viewUnified" onclick="setViewMode('unified')">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px" viewBox="0 0 24 24"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+          Hợp nhất
+        </button>
+        <button class="seg-btn" id="viewSide" onclick="setViewMode('side')">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/></svg>
+          Song song
+        </button>
+      </div>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:var(--success-light);border:1px solid #6ee7b7"></span>Thêm vào</span>
+        <span><span class="legend-dot" style="background:var(--danger-light);border:1px solid #fca5a5"></span>Đã xóa</span>
+      </div>
+    </div>
+    <button class="btn btn-export" onclick="exportReport()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Xuất báo cáo
+    </button>
+  </div>
+
+  <div class="diff-output" id="diffOutput"></div>
+
+  <div class="welcome" id="welcome">
+    <div class="welcome-hint">
+      <svg width="14" height="14" fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      Kéo thả hoặc click để tải file lên
+    </div>
+    <div class="feature-cards">
+      <div class="feature-card">
+        <div class="feature-card-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <h3>Đa định dạng</h3>
+        <p>PDF, Word &amp; văn bản thuần</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <h3>Thống kê</h3>
+        <p>Tỷ lệ giống nhau, số từ</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <h3>Xuất báo cáo</h3>
+        <p>Tải xuống file HTML</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // State
+  const state = {
+    A: null, B: null,
+    diffMode: 'words',
+    viewMode: 'unified',
+    changes: null,
+    stats: null
+  };
+
+  // PDF.js worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  // File trigger
+  function triggerFile(side) {
+    if (state[side]) return;
+    document.getElementById('fileInput' + side).click();
+  }
+
+  function onFileChange(e, side) {
+    const file = e.target.files[0];
+    if (file) loadFile(file, side);
+    e.target.value = '';
+  }
+
+  function onDragOver(e, side) {
+    e.preventDefault();
+    if (!state[side]) document.getElementById('drop' + side).classList.add('drag-over');
+  }
+
+  function onDragLeave(side) {
+    document.getElementById('drop' + side).classList.remove('drag-over');
+  }
+
+  function onDrop(e, side) {
+    e.preventDefault();
+    document.getElementById('drop' + side).classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file, side);
+  }
+
+  // Load and parse file
+  async function loadFile(file, side) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf','docx','doc','txt'].includes(ext)) {
+      showError('Định dạng không hỗ trợ. Vui lòng dùng PDF, Word (.docx) hoặc Text (.txt).');
+      return;
+    }
+
+    hideError();
+    setLoading(side, true);
+
+    try {
+      let text = '';
+      if (ext === 'pdf') {
+        text = await extractPDF(file);
+      } else if (ext === 'docx' || ext === 'doc') {
+        text = await extractWord(file);
+      } else {
+        text = await file.text();
+      }
+
+      const type = ext === 'pdf' ? 'PDF' : (ext === 'txt' ? 'Text' : 'Word');
+      state[side] = { file, text, type };
+      renderFileCard(side);
+      state.changes = null;
+      state.stats = null;
+      document.getElementById('statsCard').classList.remove('visible');
+      document.getElementById('diffOutput').classList.remove('visible');
+      document.getElementById('viewControls').classList.remove('visible');
+    } catch (err) {
+      showError('Lỗi đọc file: ' + err.message);
+    }
+
+    setLoading(side, false);
+    updateToolbar();
+  }
+
+  async function extractPDF(file) {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      pages.push(tc.items.map(it => it.str).join(' '));
+    }
+    return pages.join('\n\n');
+  }
+
+  async function extractWord(file) {
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    return result.value;
+  }
+
+  function renderFileCard(side) {
+    const s = state[side];
+    const wc = s.text.trim().split(/\s+/).filter(Boolean).length;
+    const lc = s.text.split('\n').length;
+    const sz = (s.file.size / 1024).toFixed(1);
+
+    const fileIconSvg = s.type === 'PDF'
+      ? `<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>`
+      : `<svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+
+    const html = `
+      <div class="file-icon">${fileIconSvg}</div>
+      <div class="file-meta">
+        <div class="file-badges">
+          <span class="badge badge-primary">Tài liệu ${side}</span>
+          <span class="badge badge-gray">${s.type}</span>
+        </div>
+        <div class="file-name" title="${s.file.name}">${s.file.name}</div>
+        <div class="file-stats">${sz} KB &bull; ${wc.toLocaleString()} từ &bull; ${lc.toLocaleString()} dòng</div>
+      </div>
+      <button class="file-clear" onclick="clearFile('${side}');event.stopPropagation()" title="Xóa file">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+
+    const info = document.getElementById('fileInfo' + side);
+    info.innerHTML = html;
+    info.style.display = 'flex';
+    document.getElementById('empty' + side).style.display = 'none';
+    document.getElementById('drop' + side).classList.add('has-file');
+    document.getElementById('drop' + side).style.cursor = 'default';
+    document.getElementById('resetBtn').style.display = 'flex';
+  }
+
+  function clearFile(side) {
+    state[side] = null;
+    state.changes = null;
+    state.stats = null;
+    document.getElementById('fileInfo' + side).style.display = 'none';
+    document.getElementById('empty' + side).style.display = '';
+    document.getElementById('drop' + side).classList.remove('has-file');
+    document.getElementById('drop' + side).style.cursor = 'pointer';
+    document.getElementById('statsCard').classList.remove('visible');
+    document.getElementById('diffOutput').classList.remove('visible');
+    document.getElementById('viewControls').classList.remove('visible');
+    document.getElementById('welcome').style.display = 'block';
+    if (!state.A && !state.B) document.getElementById('resetBtn').style.display = 'none';
+    updateToolbar();
+  }
+
+  function setLoading(side, on) {
+    document.getElementById('loading' + side).style.display = on ? 'flex' : 'none';
+  }
+
+  function updateToolbar() {
+    const tb = document.getElementById('toolbar');
+    if (state.A && state.B) {
+      tb.classList.add('visible');
+      document.getElementById('welcome').style.display = 'none';
+    } else {
+      tb.classList.remove('visible');
+    }
+  }
+
+  function setDiffMode(m) {
+    state.diffMode = m;
+    document.getElementById('modeWords').classList.toggle('active', m === 'words');
+    document.getElementById('modeLines').classList.toggle('active', m === 'lines');
+    if (state.changes) runCompare();
+  }
+
+  function setViewMode(m) {
+    state.viewMode = m;
+    document.getElementById('viewUnified').classList.toggle('active', m === 'unified');
+    document.getElementById('viewSide').classList.toggle('active', m === 'side');
+    if (state.changes) renderDiff();
+  }
+
+  // Compare
+  function runCompare() {
+    if (!state.A || !state.B) return;
+    hideError();
+
+    const btn = document.getElementById('compareBtn');
+    btn.disabled = true;
+    btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;border-top-color:white"></div> Đang so sánh...`;
+
+    setTimeout(() => {
+      try {
+        const leftText = state.A.text;
+        const rightText = state.B.text;
+
+        const changes = state.diffMode === 'words'
+          ? Diff.diffWords(leftText, rightText)
+          : Diff.diffLines(leftText, rightText);
+
+        let added = 0, removed = 0, unchanged = 0;
+        for (const c of changes) {
+          const l = c.value.length;
+          if (c.added) added += l;
+          else if (c.removed) removed += l;
+          else unchanged += l;
+        }
+
+        const total = unchanged + Math.max(added, removed);
+        const sim = total > 0 ? Math.round((unchanged / total) * 100) : 100;
+
+        state.changes = changes;
+        state.stats = {
+          sim, added, removed, unchanged,
+          wcA: leftText.trim().split(/\s+/).filter(Boolean).length,
+          wcB: rightText.trim().split(/\s+/).filter(Boolean).length,
+          lcA: leftText.split('\n').length,
+          lcB: rightText.split('\n').length
+        };
+
+        renderStats();
+        renderDiff();
+        document.getElementById('statsCard').classList.add('visible');
+        document.getElementById('diffOutput').classList.add('visible');
+        document.getElementById('viewControls').classList.add('visible');
+        document.getElementById('welcome').style.display = 'none';
+      } catch (err) {
+        showError('Lỗi so sánh: ' + err.message);
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> So sánh`;
+    }, 100);
+  }
+
+  function renderStats() {
+    const s = state.stats;
+    const simColor = s.sim >= 80 ? '#10b981' : s.sim >= 50 ? '#f59e0b' : '#ef4444';
+    const barColor = s.sim >= 80 ? '#10b981' : s.sim >= 50 ? '#f59e0b' : '#ef4444';
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-box">
+        <div class="stat-value" style="color:${simColor}">${s.sim}%</div>
+        <div class="stat-label">Độ giống nhau</div>
+        <div class="stat-bar"><div class="stat-bar-fill" style="width:${s.sim}%;background:${barColor}"></div></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" style="color:var(--text)">${s.wcA.toLocaleString()} / ${s.wcB.toLocaleString()}</div>
+        <div class="stat-label">Số từ (A / B)</div>
+      </div>
+      <div class="stat-box" style="background:#f0fdf4">
+        <div class="stat-value" style="color:var(--success)">+${s.added.toLocaleString()}</div>
+        <div class="stat-label">Ký tự thêm vào</div>
+      </div>
+      <div class="stat-box" style="background:#fff5f5">
+        <div class="stat-value" style="color:var(--danger)">-${s.removed.toLocaleString()}</div>
+        <div class="stat-label">Ký tự bị xóa</div>
+      </div>`;
+  }
+
+  function renderDiff() {
+    const out = document.getElementById('diffOutput');
+    if (state.viewMode === 'unified') {
+      out.innerHTML = `<div class="diff-box">
+        <div class="diff-box-header">Xem hợp nhất</div>
+        <div class="diff-content">${buildUnifiedHTML(state.changes)}</div>
+      </div>`;
+    } else {
+      const { left, right } = buildSideParts(state.changes);
+      out.innerHTML = `<div class="side-grid">
+        <div class="diff-box">
+          <div class="diff-box-header">Tài liệu A</div>
+          <div class="diff-content">${left}</div>
+        </div>
+        <div class="diff-box">
+          <div class="diff-box-header">Tài liệu B</div>
+          <div class="diff-content">${right}</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function buildUnifiedHTML(changes) {
+    let html = '';
+    for (const c of changes) {
+      const v = esc(c.value);
+      if (c.added) html += `<span class="ins">${v}</span>`;
+      else if (c.removed) html += `<span class="del">${v}</span>`;
+      else html += v;
+    }
+    return html;
+  }
+
+  function buildSideParts(changes) {
+    let left = '', right = '';
+    for (const c of changes) {
+      const v = esc(c.value);
+      if (c.added) right += `<span class="ins">${v}</span>`;
+      else if (c.removed) left += `<span class="del">${v}</span>`;
+      else { left += v; right += v; }
+    }
+    return { left, right };
+  }
+
+  // Export
+  function exportReport() {
+    if (!state.changes || !state.stats) return;
+    const s = state.stats;
+    const diffHTML = buildUnifiedHTML(state.changes);
+    const nameA = state.A.file.name;
+    const nameB = state.B.file.name;
+
+    const html = `<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8">
+<title>Báo cáo so sánh – ${nameA} vs ${nameB}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:2rem;max-width:900px;margin:auto;color:#1e293b}
+  h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
+  .sub{color:#64748b;font-size:.875rem;margin-bottom:1.5rem}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.5rem}
+  .sbox{background:#f8fafc;border-radius:10px;padding:14px;text-align:center}
+  .sv{font-size:1.3rem;font-weight:700}.sl{font-size:.75rem;color:#64748b;margin-top:3px}
+  .diff{white-space:pre-wrap;font-family:monospace;font-size:.8125rem;line-height:1.8;background:#fafafa;padding:1.25rem;border-radius:10px;border:1px solid #e2e8f0}
+  .ins{background:#d1fae5;color:#065f46;border-radius:3px}
+  .del{background:#fee2e2;color:#991b1b;text-decoration:line-through;border-radius:3px}
+  .legend{display:flex;gap:16px;font-size:.8rem;color:#64748b;margin-bottom:.75rem}
+  .ld{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+</style></head><body>
+<h1>Báo cáo so sánh tài liệu</h1>
+<div class="sub">${nameA} &lt;→&gt; ${nameB} &bull; ${new Date().toLocaleString('vi-VN')}</div>
+<div class="stats">
+  <div class="sbox"><div class="sv" style="color:${s.sim>=80?'#10b981':s.sim>=50?'#f59e0b':'#ef4444'}">${s.sim}%</div><div class="sl">Độ giống nhau</div></div>
+  <div class="sbox"><div class="sv">${s.wcA.toLocaleString()} / ${s.wcB.toLocaleString()}</div><div class="sl">Số từ (A / B)</div></div>
+  <div class="sbox"><div class="sv" style="color:#10b981">+${s.added.toLocaleString()}</div><div class="sl">Ký tự thêm vào</div></div>
+  <div class="sbox"><div class="sv" style="color:#ef4444">-${s.removed.toLocaleString()}</div><div class="sl">Ký tự bị xóa</div></div>
+</div>
+<div class="legend">
+  <span><span class="ld" style="background:#d1fae5;border:1px solid #6ee7b7"></span>Thêm vào (B)</span>
+  <span><span class="ld" style="background:#fee2e2;border:1px solid #fca5a5"></span>Đã xóa (A)</span>
+</div>
+<div class="diff">${diffHTML}</div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'bao-cao-so-sanh.html'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function swapFiles() {
+    [state.A, state.B] = [state.B, state.A];
+    if (state.A) renderFileCard('A'); else clearFile('A');
+    if (state.B) renderFileCard('B'); else clearFile('B');
+    state.changes = null;
+    state.stats = null;
+    document.getElementById('statsCard').classList.remove('visible');
+    document.getElementById('diffOutput').classList.remove('visible');
+    document.getElementById('viewControls').classList.remove('visible');
+  }
+
+  function resetAll() {
+    state.A = null; state.B = null; state.changes = null; state.stats = null;
+    ['A','B'].forEach(s => {
+      document.getElementById('fileInfo'+s).style.display = 'none';
+      document.getElementById('empty'+s).style.display = '';
+      document.getElementById('drop'+s).classList.remove('has-file');
+      document.getElementById('drop'+s).style.cursor = 'pointer';
+    });
+    document.getElementById('toolbar').classList.remove('visible');
+    document.getElementById('statsCard').classList.remove('visible');
+    document.getElementById('diffOutput').classList.remove('visible');
+    document.getElementById('viewControls').classList.remove('visible');
+    document.getElementById('welcome').style.display = 'block';
+    document.getElementById('resetBtn').style.display = 'none';
+    hideError();
+  }
+
+  function showError(msg) {
+    const b = document.getElementById('errorBanner');
+    document.getElementById('errorText').textContent = msg;
+    b.classList.add('visible');
+  }
+
+  function hideError() {
+    document.getElementById('errorBanner').classList.remove('visible');
+  }
+</script>
+</body>
+</html>
